@@ -1,11 +1,11 @@
-var sqlite3 = require('./sqlite3'),
-    mysql   = require('./mysql'),
-    pg      = require('./pg');
+import sqlite3 from './sqlite3';
+import mysql from './mysql';
+import pg from './pg';
 
-module.exports = {
-    sqlite3: sqlite3,
-    mysql: mysql,
-    pg: pg,
-    postgres: pg,
-    postgresql: pg
+export default {
+  sqlite3,
+  mysql,
+  pg,
+  postgres: pg,
+  postgresql: pg
 };

@@ -16,7 +16,7 @@ export default Object.assign({
       host: '127.0.0.1',
       user: 'root',
       password: 'T3mp0r4l.',
-      database: 'my_blog'
+      database: 'blog'
     }
   }
 }, environment);

@@ -1,148 +1,155 @@
-var Promise = require('bluebird'),
-    _       = require('lodash'),
-    models  = require('../../models'),
-    utils   = require('./utils'),
+import _ from 'lodash'; // eslint-disable-line
+import models from '../../models';
+import utils from './utils';
 
-    internal = utils.internal,
+const internal = utils.internal;
 
-    DataImporter;
-
-DataImporter = function () {};
-
-DataImporter.prototype.importData = function (data) {
+class DataImporter {
+  importData(data) {
     return this.doImport(data);
-};
+  }
 
-DataImporter.prototype.loadRoles = function () {
-    var options = _.extend({}, internal);
+  loadRoles() {
+    const options = _.extend({}, internal);
 
-    return models.Role.findAll(options).then(function (roles) {
+    return models.Role.findAll(options)
+      .then((roles) => {
         return roles.toJSON();
-    });
-};
+      });
+  }
 
-DataImporter.prototype.loadUsers = function () {
-    var users = {all: {}},
-        options = _.extend({}, {include: ['roles']}, internal);
+  loadUsers() {
+    const users = {all: {}};
+    const options = _.extend({}, {include: ['roles']}, internal);
 
-    return models.User.findAll(options).then(function (_users) {
-        _users.forEach(function (user) {
-            users.all[user.get('email')] = {realId: user.get('id')};
-            if (user.related('roles').toJSON(options)[0] && user.related('roles').toJSON(options)[0].name === 'Owner') {
-                users.owner = user.toJSON(options);
-            }
+    return models.User.findAll(options)
+      .then((_users) => {
+        _users.forEach((user) => {
+          users.all[user.get('email')] = {realId: user.get('id')};
+          if (user.related('roles').toJSON(options)[0] && user.related('roles').toJSON(options)[0].name === 'Owner') {
+            users.owner = user.toJSON(options);
+          }
         });
 
         if (!users.owner) {
-            return Promise.reject('Unable to find an owner');
+          return Promise.reject('Unable to find an owner');
         }
 
         return users;
-    });
-};
+      });
+  }
 
-DataImporter.prototype.doUserImport = function (t, tableData, owner, users, errors, roles) {
-    var userOps = [],
-        imported = [];
+  doUserImport(table, tableData, owner, users, errors, roles) {
+    let userOps = [];
+    const imported = [];
 
     if (tableData.users && tableData.users.length) {
-        if (tableData.roles_users && tableData.roles_users.length) {
-            tableData = utils.preProcessRolesUsers(tableData, owner, roles);
-        }
+      if (tableData.roles_users && tableData.roles_users.length) {
+        tableData = utils.preProcessRolesUsers(tableData, owner, roles); //eslint-disable-line
+      }
 
-        // Import users, deduplicating with already present users
-        userOps = utils.importUsers(tableData.users, users, t);
+      // Import users, deduplicating with already present users
+      userOps = utils.importUsers(tableData.users, users, table);
 
-        return Promise.settle(userOps).then(function (descriptors) {
-            descriptors.forEach(function (d) {
-                if (d.isRejected()) {
-                    errors = errors.concat(d.reason());
-                } else {
-                    imported.push(d.value().toJSON(internal));
-                }
-            });
-
-            // If adding the users fails,
-            if (errors.length > 0) {
-                t.rollback(errors);
-            } else {
-                return imported;
-            }
+      return Promise.settle(userOps).then((descriptors) => {
+        descriptors.forEach((descriptor) => {
+          if (descriptor.isRejected()) {
+            errors = errors.concat(descriptor.reason()); // eslint-disable-line
+          } else {
+            imported.push(descriptor.value().toJSON(internal));
+          }
         });
+
+        // If adding the users fails,
+        if (errors.length > 0) {
+          table.rollback(errors);
+        } else {
+          return imported;
+        }
+      });
     }
 
     return Promise.resolve({});
-};
+  }
 
-DataImporter.prototype.doImport = function (data) {
-    var self = this,
-        tableData = data.data,
-        imported = {},
-        errors = [],
-        users = {},
-        owner = {}, roles = {};
+  doImport(data) {
 
-    return self.loadRoles().then(function (_roles) {
+    let tableData = data.data;
+    const imported = {};
+    let errors = [];
+    let users = {};
+    let owner = {};
+    let roles = {};
+
+    return this.loadRoles()
+      .then((_roles) => {
         roles = _roles;
 
-        return self.loadUsers().then(function (result) {
+        return this.loadUsers()
+          .then((result) => {
             owner = result.owner;
             users = result.all;
 
-            return models.Base.transaction(function (t) {
+            return models.Base
+              .transaction((transaction) => {
                 // Step 1: Attempt to handle adding new users
-                self.doUserImport(t, tableData, owner, users, errors, roles).then(function (result) {
-                    var importResults = [];
+                this.doUserImport(transaction, tableData, owner, users, errors, roles)
+                  .then((resultDoUserImport) => {
+                    let importResults = [];
 
-                    imported.users = result;
+                    imported.users = resultDoUserImport;
 
-                    _.each(imported.users, function (user) {
-                        users[user.email] = {realId: user.id};
+                    _.each(imported.users, (user) => {
+                      users[user.email] = {realId: user.id};
                     });
 
                     // process user data - need to figure out what users we have available for assigning stuff to etc
                     try {
-                        tableData = utils.processUsers(tableData, owner, users, ['posts', 'tags']);
+                      tableData = utils.processUsers(tableData, owner, users, ['posts', 'tags']);
                     } catch (error) {
-                        return t.rollback([error]);
+                      return transaction.rollback([error]);
                     }
 
                     // Do any pre-processing of relationships (we can't depend on ids)
                     if (tableData.posts_tags && tableData.posts && tableData.tags) {
-                        tableData = utils.preProcessPostTags(tableData);
+                      tableData = utils.preProcessPostTags(tableData);
                     }
 
                     // Import things in the right order
 
-                    return utils.importTags(tableData.tags, t).then(function (results) {
+                    return utils.importTags(tableData.tags, transaction)
+                      .then((results) => {
                         if (results) {
-                            importResults = importResults.concat(results);
+                          importResults = importResults.concat(results);
                         }
 
-                        return utils.importPosts(tableData.posts, t);
-                    }).then(function (results) {
+                        return utils.importPosts(tableData.posts, transaction);
+                      })
+                      .then((results) => {
                         if (results) {
-                            importResults = importResults.concat(results);
+                          importResults = importResults.concat(results);
                         }
 
-                        return utils.importSettings(tableData.settings, t);
-                    }).then(function (results) {
+                        return utils.importSettings(tableData.settings, transaction);
+                      })
+                      .then((results) => {
                         if (results) {
-                            importResults = importResults.concat(results);
+                          importResults = importResults.concat(results);
                         }
-                    }).then(function () {
-                        importResults.forEach(function (p) {
-                            if (p.isRejected()) {
-                                errors = errors.concat(p.reason());
-                            }
+                      })
+                      .then(() => {
+                        importResults.forEach((irPromise) => {
+                          if (irPromise.isRejected()) {
+                            errors = errors.concat(irPromise.reason());
+                          }
                         });
 
                         if (errors.length === 0) {
-                            t.commit();
+                          transaction.commit();
                         } else {
-                            t.rollback(errors);
+                          transaction.rollback(errors);
                         }
-                    });
+                      });
 
                     /** do nothing with these tables, the data shouldn't have changed from the fixtures
                      *   permissions
@@ -150,18 +157,19 @@ DataImporter.prototype.doImport = function (data) {
                      *   permissions_roles
                      *   permissions_users
                      */
-                });
-            }).then(function () {
+                  });
+              })
+              .then(() => {
                 // TODO: could return statistics of imported items
                 return Promise.resolve();
-            });
-        });
-    });
-};
-
-module.exports = {
-    DataImporter: DataImporter,
-    importData: function (data) {
-        return new DataImporter().importData(data);
-    }
+              });
+          });
+      });
+  }
+}
+export default {
+  DataImporter: DataImporter,
+  importData: (data) => {
+    return new DataImporter().importData(data);
+  }
 };

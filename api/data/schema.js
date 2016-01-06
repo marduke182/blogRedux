@@ -1,4 +1,4 @@
-var db = {
+const db = {
   posts: {
     id: {type: 'increments', nullable: false, primary: true},
     uuid: {type: 'string', maxlength: 36, nullable: false, validations: {isUUID: true}},
@@ -222,10 +222,10 @@ function isNav(jsonData) {
     jsonData.hasOwnProperty('slug') && jsonData.hasOwnProperty('current');
 }
 
-module.exports.tables = db;
-module.exports.checks = {
-  isPost: isPost,
-  isTag: isTag,
-  isUser: isUser,
-  isNav: isNav
+export const tables = db;
+export const checks = {
+  isPost,
+  isTag,
+  isUser,
+  isNav
 };
